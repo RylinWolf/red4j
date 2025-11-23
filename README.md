@@ -1,10 +1,11 @@
 # redis-key-util
-本人在编写项目时，苦于构建各种 Redis 的键。于是设计了该工具类，用于全局管理和便捷构建 Redis 键。
+本人在编写 Spring Boot 项目时，苦于构建各种 Redis 的键。于是设计了该工具类，用于全局管理和便捷构建 Redis 键。
 
-一个用于统一管理与生成 Redis 键（key）的实用工具包，支持通过注解与工具类两种方式生成、注册和获取 Redis 键。
+这是一个基于 Spring Boot 的用于统一管理与生成 Redis 键（key）的实用工具包，支持通过注解与工具类两种方式生成、注册和获取 Redis 键。
 同时提供基于 Spring Data Redis 的 `RedisUtil`，封装常用的操作方法。
 
 适用场景：
+- 使用 Spring Boot 3.x 开发
 - 需要统一的 Redis Key 前缀/分隔符规范；
 - 希望通过注解在启动期批量注册键名，避免手写字符串；
 - 在代码中以强约束、可读的方式管理 Redis 键。
@@ -64,7 +65,7 @@ mvn -DskipTests package
 
 ### 方式 B：安装到本地 Maven 仓库
 
-如果你有源码，直接执行：
+如果下载了源码，则在项目中直接执行：
 
 ```
 mvn clean install -DskipTests
@@ -80,7 +81,7 @@ mvn clean install -DskipTests
 </dependency>
 ```
 
-如果你只有发布好的 jar，可用 `install:install-file`：
+如果你有发布好的 jar，可用 `install:install-file`：
 
 ```bash
 mvn install:install-file \
