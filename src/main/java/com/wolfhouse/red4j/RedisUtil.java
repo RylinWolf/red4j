@@ -1,4 +1,4 @@
-package com.wolfhouse.rediskeyutil;
+package com.wolfhouse.red4j;
 
 import lombok.NonNull;
 import org.springframework.data.redis.core.*;
@@ -43,7 +43,7 @@ public class RedisUtil {
         opsForSet.remove(key, value);
     }
 
-    public Object popSetValue(@NonNull String key, Object value) {
+    public Object popSetValue(@NonNull String key) {
         return opsForSet.pop(key);
     }
 

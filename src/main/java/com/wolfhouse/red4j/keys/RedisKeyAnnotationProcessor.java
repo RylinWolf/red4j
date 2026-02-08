@@ -1,4 +1,4 @@
-package com.wolfhouse.rediskeyutil;
+package com.wolfhouse.red4j.keys;
 
 import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;

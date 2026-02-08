@@ -1,4 +1,4 @@
-package com.wolfhouse.rediskeyutil;
+package com.wolfhouse.red4j.keys;
 
 import java.lang.annotation.ElementType;
 import java.lang.annotation.Retention;
