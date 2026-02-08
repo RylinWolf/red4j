@@ -48,4 +48,10 @@ public @interface RedisKey {
      * 则可以通过 getKey("userList") 得到 [prefix]:[secondPrefix]:user:list
      */
     boolean isKeysConstant() default false;
+
+    /**
+     * 仅在注解用于字段、且字段所属类也使用注解时有效。
+     * 默认情况下会继承类的前缀配置信息，若设为 false 则不会继承。
+     */
+    boolean inheritPrefix() default true;
 }

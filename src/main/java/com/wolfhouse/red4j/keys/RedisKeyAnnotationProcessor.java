@@ -63,8 +63,8 @@ public class RedisKeyAnnotationProcessor implements BeanPostProcessor {
             Field[] fields = targetClass.getDeclaredFields();
             for (Field field : fields) {
                 if (Modifier.isStatic(field.getModifiers())
-                    && Modifier.isFinal(field.getModifiers())
-                    && field.getType() == String.class) {
+                        && Modifier.isFinal(field.getModifiers())
+                        && field.getType() == String.class) {
                     // 如果字段有被 RedisKey 修饰，则为防止重复加载，跳过
                     if (field.getAnnotation(RedisKey.class) != null) {
                         continue;
@@ -84,9 +84,8 @@ public class RedisKeyAnnotationProcessor implements BeanPostProcessor {
                                                       .filter(s -> !s.isBlank())
                                                       .map(String::toLowerCase)
                                                       .collect(Collectors.joining(redisKey.separator()));
-                    // 若 asName，则常量名称也作为 name
-                    String name = redisKey.asName() ? fieldName : null;
-                    redisKeyUtil.registerKeyWithSecPrefix(key, name, redisKey.secondPrefix(), fieldNameSecPrefix);
+                    // 使用类批量添加键时，不处理 asName
+                    redisKeyUtil.registerKeyWithSecPrefix(key, null, redisKey.secondPrefix(), fieldNameSecPrefix);
                 }
             }
             log.info("[RedisKey] 类 {} 的 RedisKey 已注册: {}",
@@ -105,8 +104,8 @@ public class RedisKeyAnnotationProcessor implements BeanPostProcessor {
      * - 注册用的 key 优先取字段值；若为空则退回字段名的小写形式，并给出 warn 日志。
      */
     private void processAnnotatedFields(Object bean, Class<?> targetClass, RedisKey classAnno) {
-        Object targetBean = unwrapTarget(bean);
-        Field[] fields = targetClass.getDeclaredFields();
+        Object  targetBean = unwrapTarget(bean);
+        Field[] fields     = targetClass.getDeclaredFields();
         for (Field field : fields) {
             RedisKey fieldAnno = field.getAnnotation(RedisKey.class);
             // 非 RedisKey
@@ -119,7 +118,7 @@ public class RedisKeyAnnotationProcessor implements BeanPostProcessor {
                 boolean isStatic = Modifier.isStatic(field.getModifiers());
                 // 根据是否静态字段获取对应值，作为 key
                 Object rawVal = isStatic ? field.get(null) : field.get(targetBean);
-                String key = rawVal instanceof String ? (String) rawVal : null;
+                String key    = rawVal instanceof String ? (String) rawVal : null;
                 if (key == null || key.isBlank()) {
                     key = field.getName()
                                .toLowerCase();
@@ -131,17 +130,23 @@ public class RedisKeyAnnotationProcessor implements BeanPostProcessor {
 
                 // 使用类级注解的 prefix 与 separator（若类级注解不存在，则使用 RedisKeyUtil 当前配置）
                 String secPrefix = fieldAnno.secondPrefix();
+                String prefixVal = fieldAnno.prefix();
+                String sep       = fieldAnno.separator();
+
                 if (classAnno != null) {
                     // 幂等：多次 set 对已注册键无影响
                     redisKeyUtil.setPrefix(classAnno.prefix());
                     redisKeyUtil.setSeparator(classAnno.separator());
-                    secPrefix = secPrefix.isEmpty() ? classAnno.secondPrefix() : secPrefix;
+
+                    if (fieldAnno.inheritPrefix()) {
+                        prefixVal = classAnno.prefix();
+                        sep       = classAnno.separator();
+                        secPrefix = secPrefix.isEmpty() ? classAnno.secondPrefix() : secPrefix;
+                    }
                 }
-                // 分隔符
-                String sep = fieldAnno.separator();
 
                 // 拼接基准 prefix，获得完整的前缀
-                String prefix = Stream.of(fieldAnno.prefix(), secPrefix)
+                String prefix = Stream.of(prefixVal, secPrefix)
                                       .filter(s -> !s.isEmpty())
                                       .collect(Collectors.joining(sep));
 
@@ -153,7 +158,9 @@ public class RedisKeyAnnotationProcessor implements BeanPostProcessor {
                     ArrayList<String> names = new ArrayList<>(Arrays.stream(field.getName()
                                                                                  .split("_"))
                                                                     .toList());
-                    if (!name.isEmpty()) {names.add(name);}
+                    if (!name.isEmpty()) {
+                        names.add(name);
+                    }
                     name = Arrays.stream(names.toArray(new String[0]))
                                  .filter(s -> !s.isBlank())
                                  .map(String::toLowerCase)

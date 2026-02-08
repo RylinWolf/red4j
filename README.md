@@ -64,9 +64,9 @@ mvn -DskipTests package
 <dependency>
     <groupId>com.wolfhouse</groupId>
     <artifactId>redis-key-util</artifactId>
-    <version>1.0-SNAPSHOT</version>
+    <version>2.1-SNAPSHOT</version>
     <scope>system</scope>
-    <systemPath>${project.basedir}/lib/redis-key-util-1.0-SNAPSHOT.jar</systemPath>
+    <systemPath>${project.basedir}/lib/redis-key-util-2.1-SNAPSHOT.jar</systemPath>
 </dependency>
 ```
 
@@ -87,7 +87,7 @@ mvn clean install -DskipTests
 <dependency>
     <groupId>com.wolfhouse</groupId>
     <artifactId>redis-key-util</artifactId>
-    <version>1.0-SNAPSHOT</version>
+    <version>2.1-SNAPSHOT</version>
 </dependency>
 ```
 
@@ -95,10 +95,10 @@ mvn clean install -DskipTests
 
 ```bash
 mvn install:install-file \
-  -Dfile=/path/to/redis-key-util-1.0-SNAPSHOT.jar \
+  -Dfile=/path/to/redis-key-util-2.1-SNAPSHOT.jar \
   -DgroupId=com.wolfhouse \
   -DartifactId=redis-key-util \
-  -Dversion=1.0-SNAPSHOT \
+  -Dversion=2.1-SNAPSHOT \
   -Dpackaging=jar
 ```
 
@@ -154,12 +154,14 @@ public class RedisTemplateConfig {
 - `separator`：分隔符（默认 `:`）
 - `name`：自定义名称；当 `asName=true` 时，会与字段名下划线拆分后的片段一起参与拼接
 - `asName`：字段名是否参与键名拼接（对类级注解不生效）
+- `inheritPrefix`：是否继承类级注解的前缀配置（默认为 `true`；仅在字段级注解中使用，且所属类也使用了 `@RedisKey` 时有效）
 - `isKeysConstant`：是否为“键常量类”——扫描所有 `static final String` 字段并注册
 
 ### 1) 类级：键常量类
 
 ```java
 
+@Component
 @RedisKey(secondPrefix = "user:cache", isKeysConstant = true)
 public class UserKeys {
     public static final String USER_LIST = "userList";   // 键：service:user:cache:user:list
@@ -180,10 +182,11 @@ public class UserKeys {
 
 ```java
 
+@Component
 @RedisKey(prefix = "order", secondPrefix = "cache", separator = ":")
 public class OrderService {
     @RedisKey(name = "list", asName = true)
-    private final String ORDER_LIST = "orderList"; // 键：order:cache:order:list
+    private final String ORDER_LIST = "orderList"; // 键：order:cache:order:list:list
 
     @RedisKey(secondPrefix = "detail", asName = true)
     private final String ORDER_DETAIL = "orderDetail"; // 键：order:cache:detail:order:detail
@@ -192,10 +195,12 @@ public class OrderService {
 
 字段级约定（见 `RedisKeyAnnotationProcessor#processAnnotatedFields`）：
 
-- 类级 `prefix/separator/secondPrefix` 会作为默认配置
-- 字段级 `secondPrefix` 若设置会与类级合并/覆盖
-- 当 `asName=true` 时，字段名（按 `_` 拆分并转小写）与 `name` 一起拼接
-- 注册用的 “key” 优先取字段值，若为空则退回字段名的小写，并输出 warn 日志
+- 类级 `prefix/separator/secondPrefix` 会作为默认配置。
+- 当 `inheritPrefix = true` (默认) 时，字段将继承类级定义的 `prefix` 和 `separator`。
+- 字段级 `secondPrefix` 若设置会覆盖类级的 `secondPrefix`；若未设置且 `inheritPrefix = true`，则继承类级的 `secondPrefix`。
+- 当 `inheritPrefix = false` 时，字段将完全使用其自身注解定义的配置（或使用 `RedisKeyUtil` 的全局默认配置）。
+- 当 `asName=true` 时，字段名（按 `_` 拆分并转小写）与 `name` 一起拼接。
+- 注册用的 “key” 优先取字段值，若为空则退回字段名的小写，并输出 warn 日志。
 
 ## 编程式 API 用法（RedisKeyUtil）
 
