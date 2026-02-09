@@ -3,7 +3,8 @@ package com.wolfhouse.red4j.expire;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.aspectj.lang.JoinPoint;
-import org.aspectj.lang.annotation.AfterReturning;
+import org.aspectj.lang.ProceedingJoinPoint;
+import org.aspectj.lang.annotation.Around;
 import org.aspectj.lang.annotation.Aspect;
 import org.aspectj.lang.annotation.Pointcut;
 import org.aspectj.lang.reflect.MethodSignature;
@@ -44,16 +45,28 @@ public class RedisExpireAspect {
     }
 
     /**
-     * 方法执行成功返回后的处理逻辑
-     *
-     * @param joinPoint 切点
+     * 环绕通知，处理正常返回和异常场景下的 Redis 过期逻辑
      */
-    @AfterReturning(pointcut = "redisExpirePointcut()")
-    public void doAfterReturning(JoinPoint joinPoint) {
+    @Around("redisExpirePointcut()")
+    public Object doAround(ProceedingJoinPoint joinPoint) throws Throwable {
         MethodSignature signature  = (MethodSignature) joinPoint.getSignature();
         Method          method     = signature.getMethod();
         String          methodName = method.getName();
+        Object          result     = null;
+        Throwable       exception  = null;
 
+        try {
+            result = joinPoint.proceed();
+            return result;
+        } catch (Throwable t) {
+            exception = t;
+            throw t;
+        } finally {
+            handleRedisExpire(joinPoint, method, methodName, result, exception);
+        }
+    }
+
+    private void handleRedisExpire(JoinPoint joinPoint, Method method, String methodName, Object result, Throwable exception) {
         // 获取注解（优先方法上的，其次类上的）
         RedisExpire classAnnotation  = joinPoint.getTarget().getClass().getAnnotation(RedisExpire.class);
         RedisExpire methodAnnotation = method.getAnnotation(RedisExpire.class);
@@ -66,12 +79,29 @@ public class RedisExpireAspect {
         // 最终使用的注解：优先方法，若方法上没有则用类
         RedisExpire redisExpire = methodAnnotation != null ? methodAnnotation : classAnnotation;
 
-        // 校验方法名是否匹配
+        // 1. 异常处理逻辑
+        if (exception != null) {
+            if (!redisExpire.onException()) {
+                return;
+            }
+            log.debug("[RedisExpireAspect] 捕获到异常且配置了 onException=true，将继续执行过期逻辑: method={}", methodName);
+        }
+
+        // 2. 布尔返回值处理逻辑
+        if (exception == null && result instanceof Boolean) {
+            boolean boolResult = (Boolean) result;
+            if (!boolResult && !redisExpire.ignoreResult()) {
+                log.debug("[RedisExpireAspect] 方法返回 false 且未配置 ignoreResult=true，跳过过期: method={}", methodName);
+                return;
+            }
+        }
+
+        // 3. 校验方法名是否匹配
         if (!isMatch(methodName, redisExpire)) {
             return;
         }
 
-        // 执行过期逻辑
+        // 4. 执行过期逻辑
         try {
             executeExpire(joinPoint, redisExpire, classAnnotation);
         } catch (Exception e) {

@@ -3,7 +3,8 @@ package com.wolfhouse.red4j.update;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.aspectj.lang.JoinPoint;
-import org.aspectj.lang.annotation.AfterReturning;
+import org.aspectj.lang.ProceedingJoinPoint;
+import org.aspectj.lang.annotation.Around;
 import org.aspectj.lang.annotation.Aspect;
 import org.aspectj.lang.reflect.MethodSignature;
 import org.springframework.context.ApplicationContext;
@@ -38,32 +39,59 @@ public class RedisUpdateAspect {
     private final DefaultParameterNameDiscoverer parameterNameDiscoverer = new DefaultParameterNameDiscoverer();
 
     /**
-     * 方法执行成功返回后的处理逻辑
-     *
-     * @param joinPoint   切点
-     * @param redisUpdate 注解实例
-     * @param result      方法返回值
+     * 环绕通知，处理正常返回和异常场景下的 Redis 更新逻辑
      */
-    @AfterReturning(pointcut = "@annotation(redisUpdate)", returning = "result")
-    public void doAfterReturning(JoinPoint joinPoint, RedisUpdate redisUpdate, Object result) {
-        MethodSignature signature  = (MethodSignature) joinPoint.getSignature();
-        Method          method     = signature.getMethod();
-        String          methodName = method.getName();
+    @Around("@annotation(redisUpdate)")
+    public Object doAround(ProceedingJoinPoint joinPoint, RedisUpdate redisUpdate) throws Throwable {
+        MethodSignature signature = (MethodSignature) joinPoint.getSignature();
+        Method          method    = signature.getMethod();
+        Object          result    = null;
+        Throwable       exception = null;
 
         try {
+            result = joinPoint.proceed();
+            return result;
+        } catch (Throwable t) {
+            exception = t;
+            throw t;
+        } finally {
+            handleRedisUpdate(joinPoint, redisUpdate, method, result, exception);
+        }
+    }
+
+    private void handleRedisUpdate(JoinPoint joinPoint, RedisUpdate redisUpdate, Method method, Object result, Throwable exception) {
+        String methodName = method.getName();
+        try {
+            // 1. 异常处理逻辑
+            if (exception != null) {
+                if (!redisUpdate.onException()) {
+                    return;
+                }
+                log.debug("[RedisUpdateAspect] 捕获到异常且配置了 onException=true，将继续执行更新逻辑: method={}", methodName);
+            }
+
+            // 2. 布尔返回值处理逻辑
+            if (exception == null && result instanceof Boolean) {
+                boolean boolResult = (Boolean) result;
+                if (!boolResult && !redisUpdate.ignoreResult()) {
+                    log.debug("[RedisUpdateAspect] 方法返回 false 且未配置 ignoreResult=true，跳过更新: method={}", methodName);
+                    return;
+                }
+            }
+
             String spel = redisUpdate.updateMethodSpEL();
 
-            // 1. 如果是完整的 SpEL (以 @ 开头)，直接执行
+            // 3. 如果是完整的 SpEL (以 @ 开头)，直接执行
             if (StringUtils.hasText(spel) && spel.trim().startsWith("@")) {
                 evaluateSpel(joinPoint, spel, result, null);
                 log.debug("[RedisUpdateAspect] 成功执行完整 SpEL 更新逻辑: spel={}", spel);
                 return;
             }
 
-            // 2. 确定更新数据
+            // 4. 确定更新数据
             Object updateData = getUpdateData(method, joinPoint.getArgs(), result);
 
-            // 3. 获取 Redis 服务 Bean
+            // 5. 获取 Redis 服务 Bean
             Class<?> serviceClass = redisUpdate.redisService();
             if (serviceClass == Void.class) {
                 log.warn("[RedisUpdateAspect] RedisUpdate 未指定 redisService: method={}", methodName);
@@ -71,14 +99,14 @@ public class RedisUpdateAspect {
             }
             Object serviceBean = applicationContext.getBean(serviceClass);
 
-            // 4. 确定要调用的方法名
+            // 6. 确定要调用的方法名
             String updateMethodName = getUpdateMethodName(joinPoint, redisUpdate, result);
             if (!StringUtils.hasText(updateMethodName)) {
                 log.warn("[RedisUpdateAspect] RedisUpdate 未指定有效的更新方法名");
                 return;
             }
 
-            // 5. 执行更新方法
+            // 7. 执行更新方法
             executeUpdate(serviceBean, updateMethodName, updateData);
 
             log.debug("[RedisUpdateAspect] 成功触发 Redis 更新: service={}, method={}, data={}",

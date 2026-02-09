@@ -41,4 +41,19 @@ public @interface RedisUpdate {
      */
     @Language("SpEL")
     String updateMethodSpEL() default "";
+
+    /**
+     * 当方法返回值为布尔型时，是否忽略返回值，始终执行更新。
+     * <p>
+     * 默认为 false，即：若返回 false 则不执行更新，返回 true 则执行更新。
+     * 若设置为 true，则无论返回 true 还是 false，都会执行更新。
+     */
+    boolean ignoreResult() default false;
+
+    /**
+     * 当方法抛出异常时，是否仍然执行更新。
+     * <p>
+     * 默认为 false，即：抛出异常时不执行更新。
+     */
+    boolean onException() default false;
 }

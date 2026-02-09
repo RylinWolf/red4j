@@ -66,4 +66,19 @@ public @interface RedisExpire {
      */
     @Language("SpEL")
     String expireMethodSpEL() default "";
+
+    /**
+     * 当方法返回值为布尔型时，是否忽略返回值，始终执行过期。
+     * <p>
+     * 默认为 false，即：若返回 false 则不执行过期，返回 true 则执行过期。
+     * 若设置为 true，则无论返回 true 还是 false，都会执行过期。
+     */
+    boolean ignoreResult() default false;
+
+    /**
+     * 当方法抛出异常时，是否仍然执行过期。
+     * <p>
+     * 默认为 false，即：抛出异常时不执行过期。
+     */
+    boolean onException() default false;
 }
