@@ -97,7 +97,8 @@ public class RedisExpireAspect {
         }
 
         // 3. 校验方法名是否匹配
-        if (!isMatch(methodName, redisExpire)) {
+        // 如果注解用于方法，则不校验方法名
+        if (methodAnnotation == null && !isMatch(methodName, redisExpire)) {
             return;
         }
 
