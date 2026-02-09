@@ -20,22 +20,22 @@ import java.lang.annotation.Target;
 public @interface RedisExpire {
     /**
      * 匹配方法名（正则表达式）。
-     * 如果为空，则默认匹配所有方法（受限于排除规则）。
+     * 默认匹配 add, delete, update 以及以它们开头的、符合下划线或小驼峰规则的名称
      */
-    String[] includePattern() default {};
+    @Language("RegExp")
+    String[] includePattern() default {"add", "delete", "update", "^add[A-Z0-9_].*", "^delete[A-Z0-9_].*", "^update[A-Z0-9_].*"};
 
     /**
      * 排除方法名（正则表达式）。
      * 优先级高于 includePattern。
      */
+    @Language("RegExp")
     String[] excludePattern() default {};
 
     /**
      * 匹配方法名包含的字符串。
-     * 如果为空，则不以此条件过滤。
-     * 默认匹配 add, update, delete。
      */
-    String[] includeValue() default {"add", "update", "delete"};
+    String[] includeValue() default {};
 
     /**
      * 排除方法名包含的字符串。

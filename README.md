@@ -289,8 +289,16 @@ public class UserServiceImpl implements UserService {
 - `redisService`：指定要调用的 Redis 服务类。
 - `expireMethod`：指定清理方法名（默认 `expireAll`）。
 - `includeValue/excludeValue`：方法名关键字匹配。
-- `includePattern/excludePattern`：方法名正则匹配。
+- `includePattern`：方法名正则匹配。
+    - 默认匹配：`add`, `delete`, `update` 以及以它们开头的、符合下划线或小驼峰规则的名称。
+    - 默认值：`{"add", "delete", "update", "^add[A-Z0-9_].*", "^delete[A-Z0-9_].*", "^update[A-Z0-9_].*"}`。
+- `excludePattern`：排除方法名正则匹配。优先级高于 `includePattern`。
 - `expireMethodSpEL`：支持使用 SpEL 表达式动态确定方法名或直接执行逻辑。
+    - 如果以 `@` 开头，视为完整表达式直接执行。
+    - 否则，应返回一个方法名字符串。
+
+> **提示**：在 IntelliJ IDEA 等支持 `@Language` 注解的 IDE 中，`includePattern`、`excludePattern` 将获得正则表达式语法高亮和校验支持，
+`expireMethodSpEL` 将获得 SpEL 语法支持。但有时可能需要手动在 IDEA 中的 “语言注入” 中配置。
 
 ## 自动缓存更新（@RedisUpdate）
 
@@ -323,7 +331,11 @@ public class UserServiceImpl implements UserService {
 - `redisService`：指定 Redis 服务类。
 - `updateMethod`：更新方法名（默认 `update`）。
 - `updateMethodSpEL`：支持 SpEL。
+    - 如果以 `@` 开头，视为完整表达式直接执行。
+    - 否则，应返回一个方法名字符串。
 - `@Redata`：用于方法参数，标识该参数作为更新数据。若不标注，则默认使用方法返回值。
+
+> **提示**：在支持的 IDE 中，`updateMethodSpEL` 也将获得 SpEL 语法支持。
 
 ## 注意事项与最佳实践
 
