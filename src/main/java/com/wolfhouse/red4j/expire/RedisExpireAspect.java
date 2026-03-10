@@ -79,7 +79,13 @@ public class RedisExpireAspect {
         // 最终使用的注解：优先方法，若方法上没有则用类
         RedisExpire redisExpire = methodAnnotation != null ? methodAnnotation : classAnnotation;
 
-        // 1. 异常处理逻辑
+        // 1. 校验方法名是否匹配
+        // 如果注解用于方法，则不校验方法名
+        if (methodAnnotation == null && !isMatch(methodName, redisExpire)) {
+            return;
+        }
+
+        // 2. 异常处理逻辑
         if (exception != null) {
             if (!redisExpire.onException()) {
                 return;
@@ -87,19 +93,13 @@ public class RedisExpireAspect {
             log.debug("[RedisExpireAspect] 捕获到异常且配置了 onException=true，将继续执行过期逻辑: method={}", methodName);
         }
 
-        // 2. 布尔返回值处理逻辑
+        // 3. 布尔返回值处理逻辑
         if (exception == null && result instanceof Boolean) {
             boolean boolResult = (Boolean) result;
             if (!boolResult && !redisExpire.ignoreResult()) {
                 log.debug("[RedisExpireAspect] 方法返回 false 且未配置 ignoreResult=true，跳过过期: method={}", methodName);
                 return;
             }
-        }
-
-        // 3. 校验方法名是否匹配
-        // 如果注解用于方法，则不校验方法名
-        if (methodAnnotation == null && !isMatch(methodName, redisExpire)) {
-            return;
         }
 
         // 4. 执行过期逻辑

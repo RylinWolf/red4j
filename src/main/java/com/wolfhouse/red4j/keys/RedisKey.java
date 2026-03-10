@@ -11,7 +11,7 @@ import java.lang.annotation.Target;
  * <p>
  * 修饰字段时，遵循以下规则：
  * - 字段值作为 key
- * - 若指定 asName 为 true，则 Redis 的键 为 [RedisKey(注解).prefix + secondPrefix] + [以 _ 分隔的小写字段名]，此时 name 属性将不生效
+ * - 若指定 asName 为 true，则 Redis 的键 为 [RedisKey(注解).prefix + secondPrefix] + [以 _ 分隔的小写字段名] + [name]
  *
  * @author Rylin Wolf
  */

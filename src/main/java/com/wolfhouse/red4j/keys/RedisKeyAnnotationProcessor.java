@@ -43,6 +43,7 @@ public class RedisKeyAnnotationProcessor implements BeanPostProcessor {
         // 处理修饰类
         RedisKey redisKey = AnnotationUtils.findAnnotation(targetClass, RedisKey.class);
         if (redisKey != null) {
+            log.debug("[RedisKey] 处理常量类: {}", targetClass.getSimpleName());
             // 修饰类时，必须指定常量类，否则不生效
             if (redisKey.isKeysConstant()) {
                 // 设置前缀与分隔符（幂等：RedisKeyUtil 内部 keyMap 使用 computeIfAbsent，不会覆盖已有 key）
