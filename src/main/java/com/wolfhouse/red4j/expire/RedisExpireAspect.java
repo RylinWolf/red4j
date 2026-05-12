@@ -168,24 +168,28 @@ public class RedisExpireAspect {
         // 2. 否则，需要确定 serviceBean 和 methodName
         Class<?> serviceClass    = redisExpire.redisService();
         boolean  hasServiceClass = serviceClass != null && serviceClass != Void.class;
+        // 方法级没有指定缓存服务，则从类级获取
         if (!hasServiceClass && classExpire != null) {
             serviceClass = classExpire.redisService();
         }
-
-        if (!hasServiceClass) {
-            log.warn("[RedisExpireAspect] RedisExpire 未指定 redisService");
-            return;
-        }
-
-        // 从上下文获取 Bean
-        Object serviceBean = applicationContext.getBean(serviceClass);
+        hasServiceClass = serviceClass != null && serviceClass != Void.class;
 
         // 确定要调用的方法名
-        String expireMethodName = getExpireMethodName(joinPoint, redisExpire, classExpire);
-        if (!StringUtils.hasText(expireMethodName)) {
-            log.warn("[RedisExpireAspect] RedisExpire 未指定有效的过期方法名");
+        String  expireMethodName = getExpireMethodName(joinPoint, redisExpire, classExpire);
+        boolean hasMethodName    = StringUtils.hasText(expireMethodName);
+        // 未指定服务或未指定方法名，则从类级注解中获取 SpEL，若有则执行，没有则错误
+        if (!hasServiceClass || !hasMethodName) {
+            spel = classExpire != null ? classExpire.expireMethodSpEL() : null;
+            if (StringUtils.hasText(spel) && spel.startsWith("@")) {
+                evaluateSpel(joinPoint, spel, null);
+                log.debug("[RedisExpireAspect] 成功执行完整 SpEL 过期逻辑: spel={}", spel);
+                return;
+            }
+            log.error("[RedisExpireAspect] RedisExpire 未指定 redisService 或未指定有效的过期方法名");
             return;
         }
+        // 从上下文获取 Bean
+        Object serviceBean = applicationContext.getBean(serviceClass);
 
         // 调用目标方法（简单起见，目前仅支持无参的过期方法，这也是大多数 Redis 服务的 expireAll 设计）
         Method method = serviceBean.getClass().getMethod(expireMethodName);
@@ -197,6 +201,8 @@ public class RedisExpireAspect {
      * 解析过期方法名，支持 SpEL
      */
     private String getExpireMethodName(JoinPoint joinPoint, RedisExpire redisExpire, RedisExpire classExpire) {
+        // 存在一种可能性，有方法级注解但是没有传递过期方法名
+        // 所以这里优先检查方法级注解，随后检查类级注解
         String spel = redisExpire.expireMethodSpEL();
         if (StringUtils.hasText(spel)) {
             Object value = evaluateSpel(joinPoint, spel, null);
@@ -205,6 +211,11 @@ public class RedisExpireAspect {
 
         String method = redisExpire.expireMethod();
         if (!StringUtils.hasText(method) && classExpire != null) {
+            method = classExpire.expireMethodSpEL();
+            if (StringUtils.hasText(method)) {
+                Object value = evaluateSpel(joinPoint, spel, null);
+                return value != null ? value.toString() : null;
+            }
             method = classExpire.expireMethod();
         }
         return method;
