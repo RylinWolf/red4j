@@ -12,17 +12,18 @@ import java.util.Set;
  *
  * @author Rylin Wolf
  */
+@SuppressWarnings("unused")
 public class RedisUtil {
-    public final RedisTemplate<String, Object> redisTemplate;
+    public final RedisTemplate<String, Object>   redisTemplate;
     public final ValueOperations<String, Object> opsForValue;
-    public final SetOperations<String, Object> opsForSet;
-    public final ZSetOperations<String, Object> opsForZSet;
+    public final SetOperations<String, Object>   opsForSet;
+    public final ZSetOperations<String, Object>  opsForZSet;
 
     public RedisUtil(RedisTemplate<String, Object> redisTemplate) {
         this.redisTemplate = redisTemplate;
-        this.opsForValue = redisTemplate.opsForValue();
-        this.opsForSet = redisTemplate.opsForSet();
-        this.opsForZSet = redisTemplate.opsForZSet();
+        this.opsForValue   = redisTemplate.opsForValue();
+        this.opsForSet     = redisTemplate.opsForSet();
+        this.opsForZSet    = redisTemplate.opsForZSet();
     }
 
     public Long getAndIncrease(@NonNull String key, int value) {
@@ -119,6 +120,18 @@ public class RedisUtil {
         return redisTemplate.expire(key, duration);
     }
 
+    public long deleteMatch(@NonNull String pattern, int batchSize) {
+        long count = 0;
+        for (; ; ) {
+            Set<String> keys = keysMatch(pattern, batchSize);
+            if (keys.isEmpty()) {
+                return count;
+            }
+            redisTemplate.delete(keys);
+            count += keys.size();
+        }
+    }
+
     // endregion
 
     // region 键匹配
@@ -133,10 +146,10 @@ public class RedisUtil {
     public Set<String> keysMatch(@NonNull String pattern, int count) {
         HashSet<String> keys = new HashSet<>();
         try (Cursor<String> cursor = redisTemplate.scan(
-            ScanOptions.scanOptions()
-                       .match(pattern)
-                       .count(count)
-                       .build())) {
+                ScanOptions.scanOptions()
+                           .match(pattern)
+                           .count(count)
+                           .build())) {
             while (cursor.hasNext()) {
                 keys.add(cursor.next());
             }
