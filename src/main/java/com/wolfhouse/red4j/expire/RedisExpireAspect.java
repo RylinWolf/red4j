@@ -166,12 +166,13 @@ public class RedisExpireAspect {
         }
 
         // 2. 否则，需要确定 serviceBean 和 methodName
-        Class<?> serviceClass = redisExpire.redisService();
-        if (serviceClass == Void.class && classExpire != null) {
+        Class<?> serviceClass    = redisExpire.redisService();
+        boolean  hasServiceClass = serviceClass != null && serviceClass != Void.class;
+        if (!hasServiceClass && classExpire != null) {
             serviceClass = classExpire.redisService();
         }
 
-        if (serviceClass == Void.class) {
+        if (!hasServiceClass) {
             log.warn("[RedisExpireAspect] RedisExpire 未指定 redisService");
             return;
         }
