@@ -9,6 +9,7 @@ import lombok.Setter;
 import org.springframework.data.redis.core.*;
 
 import java.time.Duration;
+import java.util.Collection;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -178,7 +179,7 @@ public class RedisUtil {
 
     @Nullable
     public <T> T convert(Object o, TypeReference<T> reference) {
-        if (o == null) {
+        if (checkNull(o)) {
             return null;
         }
         return objectMapper.convertValue(o, reference);
@@ -186,7 +187,7 @@ public class RedisUtil {
 
     @Nullable
     public <T> T convert(Object o, Class<T> clazz) {
-        if (o == null) {
+        if (checkNull(o)) {
             return null;
         }
         return objectMapper.convertValue(o, clazz);
@@ -194,11 +195,28 @@ public class RedisUtil {
 
     @Nullable
     public <T> List<T> convertList(Object o, Class<T> clazz) {
-        if (o == null) {
+        if (checkNull(o)) {
             return null;
         }
         return objectMapper.convertValue(o, objectMapper.getTypeFactory()
                                                         .constructCollectionType(List.class, clazz));
+    }
+
+    /**
+     * 检查元素是否为空。
+     * 对于 HashOperation, multiGet 在查询元素为空时会返回一个包含单个 null 值的列表
+     *
+     * @param o 要检查的元素
+     * @return 是否为空
+     */
+    public boolean checkNull(Object o) {
+        if (o == null) {
+            return true;
+        }
+        if (o instanceof Collection<?> col && col.size() == 1) {
+            return col.iterator().next() == null;
+        }
+        return false;
     }
     // endregion
 }
