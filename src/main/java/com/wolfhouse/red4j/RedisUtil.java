@@ -1,10 +1,16 @@
 package com.wolfhouse.red4j;
 
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import jakarta.annotation.Nullable;
+import lombok.Getter;
 import lombok.NonNull;
+import lombok.Setter;
 import org.springframework.data.redis.core.*;
 
 import java.time.Duration;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 
 /**
@@ -14,16 +20,25 @@ import java.util.Set;
  */
 @SuppressWarnings("unused")
 public class RedisUtil {
-    public final RedisTemplate<String, Object>   redisTemplate;
-    public final ValueOperations<String, Object> opsForValue;
-    public final SetOperations<String, Object>   opsForSet;
-    public final ZSetOperations<String, Object>  opsForZSet;
+    private static final ObjectMapper                    DEFAULT_OBJECT_MAPPER = new ObjectMapper();
+    public final         RedisTemplate<String, Object>   redisTemplate;
+    public final         ValueOperations<String, Object> opsForValue;
+    public final         SetOperations<String, Object>   opsForSet;
+    public final         ZSetOperations<String, Object>  opsForZSet;
+    @Setter
+    @Getter
+    private              ObjectMapper                    objectMapper;
 
     public RedisUtil(RedisTemplate<String, Object> redisTemplate) {
+        this(redisTemplate, DEFAULT_OBJECT_MAPPER);
+    }
+
+    public RedisUtil(RedisTemplate<String, Object> redisTemplate, ObjectMapper objectMapper) {
         this.redisTemplate = redisTemplate;
         this.opsForValue   = redisTemplate.opsForValue();
         this.opsForSet     = redisTemplate.opsForSet();
         this.opsForZSet    = redisTemplate.opsForZSet();
+        this.objectMapper  = objectMapper;
     }
 
     public Long getAndIncrease(@NonNull String key, int value) {
@@ -157,5 +172,33 @@ public class RedisUtil {
         return keys;
     }
 
+    // endregion
+
+    // region 结果集转换
+
+    @Nullable
+    public <T> T convert(Object o, TypeReference<T> reference) {
+        if (o == null) {
+            return null;
+        }
+        return objectMapper.convertValue(o, reference);
+    }
+
+    @Nullable
+    public <T> T convert(Object o, Class<T> clazz) {
+        if (o == null) {
+            return null;
+        }
+        return objectMapper.convertValue(o, clazz);
+    }
+
+    @Nullable
+    public <T> List<T> convertList(Object o, Class<T> clazz) {
+        if (o == null) {
+            return null;
+        }
+        return objectMapper.convertValue(o, objectMapper.getTypeFactory()
+                                                        .constructCollectionType(List.class, clazz));
+    }
     // endregion
 }
