@@ -6,13 +6,12 @@ import jakarta.annotation.Nullable;
 import lombok.Getter;
 import lombok.NonNull;
 import lombok.Setter;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.*;
 
 import java.time.Duration;
-import java.util.Collection;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Set;
+import java.util.*;
+import java.util.function.Function;
 
 /**
  * 操作 Redis 的工具类
@@ -20,6 +19,7 @@ import java.util.Set;
  * @author Rylin Wolf
  */
 @SuppressWarnings("unused")
+@Slf4j
 public class RedisUtil {
     private static final ObjectMapper                    DEFAULT_OBJECT_MAPPER = new ObjectMapper();
     public final         RedisTemplate<String, Object>   redisTemplate;
@@ -153,18 +153,28 @@ public class RedisUtil {
     // region 键匹配
 
     /**
-     * 扫描 Redis 数据库中与指定匹配模式相符的键。
+     * 扫描 Redis 数据库中与指定匹配模式相符的键。批次大小默认为 10000。
      *
      * @param pattern 匹配模式，支持通配符，例如 "user:*"。
-     * @param count   每次扫描的最大数量，控制扫描结果的批次大小。
      * @return 返回匹配的键值集合。
      */
-    public Set<String> keysMatch(@NonNull String pattern, int count) {
+    public Set<String> keysMatch(@NonNull String pattern) {
+        return keysMatch(pattern, 10000);
+    }
+
+    /**
+     * 扫描 Redis 数据库中与指定匹配模式相符的键。
+     *
+     * @param pattern   匹配模式，支持通配符，例如 "user:*"。
+     * @param batchSize 每次扫描的最大数量，控制扫描结果的批次大小。
+     * @return 返回匹配的键值集合。
+     */
+    public Set<String> keysMatch(@NonNull String pattern, int batchSize) {
         HashSet<String> keys = new HashSet<>();
         try (Cursor<String> cursor = redisTemplate.scan(
                 ScanOptions.scanOptions()
                            .match(pattern)
-                           .count(count)
+                           .count(batchSize)
                            .build())) {
             while (cursor.hasNext()) {
                 keys.add(cursor.next());
@@ -173,9 +183,30 @@ public class RedisUtil {
         return keys;
     }
 
-    // endregion
-
-    // region 结果集转换
+    /**
+     * 扫描 Redis 数据库中与指定匹配模式相符的键，并同步执行提供方法
+     *
+     * @param pattern   匹配模式，支持通配符，例如 "user:*"。
+     * @param batchSize 每次扫描的最大数量，控制扫描结果的批次大小。
+     * @param function  附加方法，对键进行处理并返回处理结果
+     * @return 返回执行结果，包含键数量和处理结果列表
+     */
+    public <T> KeyExecute<T> keysMatchWith(@NonNull String pattern, int batchSize, Function<String, T> function) {
+        long    count  = 0;
+        List<T> result = new ArrayList<>();
+        try (Cursor<String> cursor = redisTemplate.scan(
+                ScanOptions.scanOptions()
+                           .match(pattern)
+                           .count(batchSize)
+                           .build())) {
+            while (cursor.hasNext()) {
+                String key = cursor.next();
+                count++;
+                result.add(function.apply(key));
+            }
+        }
+        return new KeyExecute<>(count, result);
+    }
 
     @Nullable
     public <T> T convert(Object o, TypeReference<T> reference) {
@@ -184,6 +215,10 @@ public class RedisUtil {
         }
         return objectMapper.convertValue(o, reference);
     }
+
+    // endregion
+
+    // region 结果集转换
 
     @Nullable
     public <T> T convert(Object o, Class<T> clazz) {
@@ -195,28 +230,37 @@ public class RedisUtil {
 
     @Nullable
     public <T> List<T> convertList(Object o, Class<T> clazz) {
-        if (checkNull(o)) {
-            return null;
-        }
-        return objectMapper.convertValue(o, objectMapper.getTypeFactory()
-                                                        .constructCollectionType(List.class, clazz));
+        return convertList(o, clazz, true);
     }
 
     /**
-     * 检查元素是否为空。
-     * 对于 HashOperation, multiGet 在查询元素为空时会返回一个包含单个 null 值的列表
+     * 将给定的对象转换为指定类型的列表。
      *
-     * @param o 要检查的元素
-     * @return 是否为空
+     * @param o          需要转换的对象。
+     * @param clazz      列表中元素的目标类型。
+     * @param ignoreNull 如果为 true，将过滤掉列表中的 null 值。
+     * @return 转换后的列表，如果输入对象为 null，返回 null。
      */
-    public boolean checkNull(Object o) {
-        if (o == null) {
-            return true;
+    @Nullable
+    public <T> List<T> convertList(Object o, Class<T> clazz, boolean ignoreNull) {
+        if (checkNull(o)) {
+            return null;
         }
-        if (o instanceof Collection<?> col && col.size() == 1) {
-            return col.iterator().next() == null;
-        }
-        return false;
+        List<T> tList = objectMapper.convertValue(o, objectMapper.getTypeFactory()
+                                                                 .constructCollectionType(List.class, clazz));
+        return ignoreNull ? tList.stream().filter(Objects::nonNull).toList() : tList;
     }
+
+    private boolean checkNull(Object o) {
+        return Objects.isNull(o);
+    }
+
+    /**
+     * 键匹配执行结果封装
+     *
+     * @param count  匹配到的键数量
+     * @param result 执行结果
+     */
+    public record KeyExecute<T>(long count, List<T> result) {}
     // endregion
 }

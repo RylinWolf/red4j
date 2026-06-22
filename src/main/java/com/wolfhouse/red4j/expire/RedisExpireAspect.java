@@ -9,11 +9,11 @@ import org.aspectj.lang.annotation.Aspect;
 import org.aspectj.lang.annotation.Pointcut;
 import org.aspectj.lang.reflect.MethodSignature;
 import org.springframework.context.ApplicationContext;
+import org.springframework.context.expression.MethodBasedEvaluationContext;
 import org.springframework.core.DefaultParameterNameDiscoverer;
 import org.springframework.expression.Expression;
 import org.springframework.expression.ExpressionParser;
 import org.springframework.expression.spel.standard.SpelExpressionParser;
-import org.springframework.expression.spel.support.StandardEvaluationContext;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
@@ -185,7 +185,7 @@ public class RedisExpireAspect {
                 log.debug("[RedisExpireAspect] 成功执行完整 SpEL 过期逻辑: spel={}", spel);
                 return;
             }
-            log.error("[RedisExpireAspect] RedisExpire 未指定 redisService 或未指定有效的过期方法名");
+            log.error("[RedisExpireAspect] RedisExpire 未指定 redisService 或未指定有效的过期方法名, spel={}, joinPoint={}", spel, joinPoint);
             return;
         }
         // 从上下文获取 Bean
@@ -230,13 +230,15 @@ public class RedisExpireAspect {
      * @return 解析后的 SpEL 表达式计算结果，类型可以是指定的 resultType 或原始结果。
      */
     private Object evaluateSpel(JoinPoint joinPoint, String spel, Class<?> resultType) {
-        StandardEvaluationContext context = new StandardEvaluationContext();
+        Object[]        args           = joinPoint.getArgs();
+        MethodSignature signature      = (MethodSignature) joinPoint.getSignature();
+        Method          method         = signature.getMethod();
+        String[]        parameterNames = parameterNameDiscoverer.getParameterNames(method);
+
+        MethodBasedEvaluationContext context = new MethodBasedEvaluationContext(joinPoint.getTarget(), method, args, new DefaultParameterNameDiscoverer());
         // 允许访问 Spring Bean
         context.setBeanResolver(new org.springframework.context.expression.BeanFactoryResolver(applicationContext));
 
-        Object[]        args           = joinPoint.getArgs();
-        MethodSignature signature      = (MethodSignature) joinPoint.getSignature();
-        String[]        parameterNames = parameterNameDiscoverer.getParameterNames(signature.getMethod());
 
         if (parameterNames != null) {
             for (int i = 0; i < parameterNames.length; i++) {
