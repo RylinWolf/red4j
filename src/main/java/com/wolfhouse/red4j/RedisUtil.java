@@ -7,11 +7,15 @@ import lombok.Getter;
 import lombok.NonNull;
 import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
+import org.redisson.api.RLock;
+import org.redisson.api.RedissonClient;
 import org.springframework.data.redis.core.*;
 
 import java.time.Duration;
 import java.util.*;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
+import java.util.function.Supplier;
 
 /**
  * 操作 Redis 的工具类
@@ -23,6 +27,7 @@ import java.util.function.Function;
 public class RedisUtil {
     private static final ObjectMapper                    DEFAULT_OBJECT_MAPPER = new ObjectMapper();
     public final         RedisTemplate<String, Object>   redisTemplate;
+    public final         RedissonClient                  redissonClient;
     public final         ValueOperations<String, Object> opsForValue;
     public final         SetOperations<String, Object>   opsForSet;
     public final         ZSetOperations<String, Object>  opsForZSet;
@@ -30,27 +35,32 @@ public class RedisUtil {
     @Getter
     private              ObjectMapper                    objectMapper;
 
-    public RedisUtil(RedisTemplate<String, Object> redisTemplate) {
-        this(redisTemplate, DEFAULT_OBJECT_MAPPER);
+    public RedisUtil(RedisTemplate<String, Object> redisTemplate, RedissonClient redissonClient) {
+        this(redisTemplate, redissonClient, DEFAULT_OBJECT_MAPPER);
     }
 
-    public RedisUtil(RedisTemplate<String, Object> redisTemplate, ObjectMapper objectMapper) {
-        this.redisTemplate = redisTemplate;
-        this.opsForValue   = redisTemplate.opsForValue();
-        this.opsForSet     = redisTemplate.opsForSet();
-        this.opsForZSet    = redisTemplate.opsForZSet();
-        this.objectMapper  = objectMapper;
+    public RedisUtil(RedisTemplate<String, Object> redisTemplate, RedissonClient redissonClient, ObjectMapper objectMapper) {
+        this.redisTemplate  = redisTemplate;
+        this.opsForValue    = redisTemplate.opsForValue();
+        this.opsForSet      = redisTemplate.opsForSet();
+        this.opsForZSet     = redisTemplate.opsForZSet();
+        this.redissonClient = redissonClient;
+        this.objectMapper   = objectMapper;
+    }
+
+    private static void lockTaskErrorLog() {
+        log.error("执行任务时发生错误");
     }
 
     public Long getAndIncrease(@NonNull String key, int value) {
         return opsForValue.increment(key, value);
     }
 
+    // region set 方法
+
     public Long getAndDecrease(@NonNull String key, int value) {
         return opsForValue.decrement(key, value);
     }
-
-    // region set 方法
 
     public Long addSetValue(@NonNull String key, Object... value) {
         return opsForSet.add(key, value);
@@ -84,14 +94,14 @@ public class RedisUtil {
         return opsForZSet.remove(key);
     }
 
-    public Double incrementZSetValue(@NonNull String key, Object value, double score) {
-        return opsForZSet.incrementScore(key, value, score);
-    }
-
 
     // endregion
 
     // region value 方法
+
+    public Double incrementZSetValue(@NonNull String key, Object value, double score) {
+        return opsForZSet.incrementScore(key, value, score);
+    }
 
     public void setValue(@NonNull String key, Object value) {
         this.opsForValue.set(key, value);
@@ -100,7 +110,6 @@ public class RedisUtil {
     public void setValueExpire(@NonNull String key, Object value, Duration duration) {
         this.opsForValue.set(key, value, duration);
     }
-
 
     public Boolean setValueIfAbsent(@NonNull String key, Object value) {
         return this.opsForValue.setIfAbsent(key, value);
@@ -116,13 +125,13 @@ public class RedisUtil {
         return value;
     }
 
-    public Object getValueAndDelete(@NonNull String key) {
-        return opsForValue.getAndDelete(key);
-    }
-
     // endregion
 
     // region 内置方法
+
+    public Object getValueAndDelete(@NonNull String key) {
+        return opsForValue.getAndDelete(key);
+    }
 
     public Boolean hasKey(@NonNull String key) {
         return redisTemplate.hasKey(key);
@@ -136,6 +145,10 @@ public class RedisUtil {
         return redisTemplate.expire(key, duration);
     }
 
+    // endregion
+
+    // region 键匹配
+
     public long deleteMatch(@NonNull String pattern, int batchSize) {
         long count = 0;
         for (; ; ) {
@@ -147,10 +160,6 @@ public class RedisUtil {
             count += keys.size();
         }
     }
-
-    // endregion
-
-    // region 键匹配
 
     /**
      * 扫描 Redis 数据库中与指定匹配模式相符的键。批次大小默认为 10000。
@@ -208,6 +217,10 @@ public class RedisUtil {
         return new KeyExecute<>(count, result);
     }
 
+    // endregion
+
+    // region 结果集转换
+
     @Nullable
     public <T> T convert(Object o, TypeReference<T> reference) {
         if (checkNull(o)) {
@@ -215,10 +228,6 @@ public class RedisUtil {
         }
         return objectMapper.convertValue(o, reference);
     }
-
-    // endregion
-
-    // region 结果集转换
 
     @Nullable
     public <T> T convert(Object o, Class<T> clazz) {
@@ -250,10 +259,112 @@ public class RedisUtil {
                                                                  .constructCollectionType(List.class, clazz));
         return ignoreNull ? tList.stream().filter(Objects::nonNull).toList() : tList;
     }
+    // endregion
+
+    // region 分布式锁
 
     private boolean checkNull(Object o) {
         return Objects.isNull(o);
     }
+
+    /**
+     * 获取分布式锁
+     *
+     * @param key      锁的键
+     * @param duration 锁的持续时间
+     */
+    public void lock(String key, Duration duration) {
+        long seconds = duration.getSeconds();
+        long ms      = seconds * 1000 + duration.getNano() / 1_000_000;
+        redissonClient.getLock(key).lock(ms, TimeUnit.MILLISECONDS);
+    }
+
+    public boolean tryLock(String key) {
+        return redissonClient.getLock(key).tryLock();
+    }
+
+    /**
+     * 尝试释放分布式锁。仅在当前线程持有锁时才会成功
+     *
+     * @param key 锁的键
+     */
+    public void unlock(String key) {
+        RLock lock = redissonClient.getLock(key);
+        if (!lock.isLocked()) {
+            // 锁不存在
+            return;
+        }
+        if (!lock.isHeldByCurrentThread()) {
+            // 锁非当前线程持有
+            return;
+        }
+        lock.unlock();
+    }
+
+    /**
+     * 使用分布式锁执行
+     *
+     * @param key      锁的键
+     * @param duration 锁的持续时间
+     * @param supplier 执行的函数
+     * @param <T>      执行结果类型
+     * @return 执行结果
+     */
+    public <T> T withLock(String key, Duration duration, Supplier<T> supplier) {
+        Exception exception;
+        lock(key, duration);
+        try {
+            return supplier.get();
+        } catch (Exception e) {
+            exception = e;
+            lockTaskErrorLog();
+        } finally {
+            unlock(key);
+        }
+
+        throw new RuntimeException(exception);
+    }
+
+    /**
+     * 尝试执行，如果锁被其他线程占用，则返回 false
+     *
+     * @param key      锁的键
+     * @param consumer 待执行的任务
+     * @return 是否执行成功
+     */
+    public <T> LockTaskResult<T> tryWithLock(String key, Function<Boolean, T> consumer) {
+        Exception exception;
+        try {
+            boolean locked = tryLock(key);
+            T       result = consumer.apply(locked);
+            return locked ? LockTaskResult.success(result) : LockTaskResult.fail(result);
+        } catch (Exception e) {
+            exception = e;
+            lockTaskErrorLog();
+        } finally {
+            unlock(key);
+        }
+        throw new RuntimeException(exception);
+    }
+
+    /**
+     * 表示分布式锁执行任务的结果。
+     *
+     * @param <T>     任务执行结果的类型
+     * @param success 标识任务是否执行成功
+     * @param result  任务执行结果，如果任务失败则为 null
+     */
+    public record LockTaskResult<T>(boolean success, T result) {
+
+        public static <T> LockTaskResult<T> fail(T result) {
+            return new LockTaskResult<>(false, result);
+        }
+
+        public static <T> LockTaskResult<T> success(T result) {
+            return new LockTaskResult<>(true, result);
+        }
+    }
+    // endregion
 
     /**
      * 键匹配执行结果封装
@@ -262,5 +373,5 @@ public class RedisUtil {
      * @param result 执行结果
      */
     public record KeyExecute<T>(long count, List<T> result) {}
-    // endregion
+
 }
